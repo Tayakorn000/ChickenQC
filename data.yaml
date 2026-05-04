@@ -1,0 +1,7 @@
+path: /Users/tayakornwet/Documents/chicken/dataset
+train: images/train
+val: images/val
+
+names:
+  0: chicken-drumstick
+  1: chicken-breast
