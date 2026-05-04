@@ -74,5 +74,3 @@ Trained weights will be saved to `runs/detect/*/weights/best.pt`. Update the `WE
 
 - [ ] Enable GPIO relay for pneumatic reject gate (`RELAY_PIN`, `BELT_DELAY_SEC`)
 - [ ] Configurable rejection thresholds via GUI
-- [ ] Session export (CSV / PDF report)
-- [ ] Remote monitoring dashboard
