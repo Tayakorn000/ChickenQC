@@ -24,6 +24,13 @@ predictions/
 runs/
 train.log
 run.log
+train_v2.log
+*.bak
+
+# Runtime output
+snapshots/
+rejects/
+logs/
 
 # OS
 .DS_Store

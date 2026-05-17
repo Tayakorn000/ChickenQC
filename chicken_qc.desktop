@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Chicken QC
+Exec=bash -c "pkill -f python3; sleep 2; export DISPLAY=:0; cd /home/project/chicken && /usr/bin/python3 main.py"
+WorkingDirectory=/home/project/chicken
+Terminal=false
+X-GNOME-Autostart-enabled=true

@@ -1,20 +1,11 @@
-"""
-ระบบตรวจคุณภาพชิ้นไก่ — รันบน Raspberry Pi 5
-
-แบ่งการทำงานเป็น 4 ส่วนที่รันพร้อมกัน:
-  Thread 1 (กล้อง)    → จับภาพรัวๆ ไม่หยุดรอใคร
-  Thread 2 (AI)        → รับภาพไปให้ YOLO + วิเคราะห์สีเนื้อ
-  Thread 3 (วาดภาพ)   → วาดกรอบ + ข้อความลงภาพ แล้วส่งให้หน้าจอ
-  Main Thread (หน้าจอ) → แค่เอาภาพที่วาดเสร็จแล้วไปแปะบนจอ
-
-ทำแบบนี้เพราะถ้าให้ทุกอย่างรันบน main thread เดียว หน้าจอจะกระตุกทุกครั้งที่ YOLO ประมวลผล
-"""
+"""ตรวจคุณภาพชิ้นไก่บน Pi 5 — 4 thread: กล้อง / AI / วาดภาพ / หน้าจอ"""
 
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from queue import Queue, Empty
-# import RPi.GPIO as GPIO  # TODO: เปิดตอนต่อนิวเมติกจริง
+import RPi.GPIO as GPIO
 
 import cv2
 import numpy as np
@@ -27,28 +18,32 @@ import customtkinter as ctk
 
 from GUI import InspectionApp
 
-ROOT    = Path(__file__).parent
-WEIGHTS = ROOT / "runs" / "detect" / "runs" / "chicken_v1" / "weights" / "best.pt"
+ROOT     = Path(__file__).parent
+WEIGHTS  = ROOT / "runs" / "detect" / "runs" / "chicken_v2" / "weights" / "best.onnx"
+LOG_ROOT = ROOT / "rejects"   # crop ของชิ้น reject แยกตามวัน
+TXT_LOG  = ROOT / "logs"      # txt log ทุกชิ้น แยกตามวัน
+SNAPS    = ROOT / "snapshots" # ภาพ thumbnail ทุกชิ้น สำหรับโชว์ในหน้าประวัติ
 
-# ข้าม 5 frame แล้วค่อยส่ง 1 frame ให้ AI — ทำให้หน้าจอลื่น AI ไม่ต้องแบกรับทุก frame
-AI_SKIP_FRAMES = 5
+AI_SKIP_FRAMES = 2     # ส่งให้ AI ทุก ๆ N+1 frame
+CONF_THRESHOLD = 0.35  # ความมั่นใจขั้นต่ำของ YOLO
 
-# YOLO จะรายงานผลเฉพาะ box ที่มั่นใจเกิน 35%
-CONF_THRESHOLD = 0.35
+CLASS_TH = {           # อังกฤษ → ไทย สำหรับ label
+    "chicken-drumstick": "น่องไก่",
+    "chicken-breast":    "อกไก่",
+}
 
-# ── TODO: นิวเมติก ────────────────────────────────────────────────────────────
-# RELAY_PIN      = 17   # ขา GPIO ที่ต่อกับ relay (เปลี่ยนตามที่ต่อจริง)
-# BELT_DELAY_SEC = 5.0  # วินาทีที่ชิ้นไก่ใช้เดินทางจากกล้องถึงจุดดัน (สายพานคงที่)
-# PUSH_DURATION  = 0.4  # วินาทีที่กระบอกค้างไว้ก่อนเก็บกลับ
-# ─────────────────────────────────────────────────────────────────────────────
+# นิวเมติก: GPIO24 → relay → solenoid valve 24V
+RELAY_PIN         = 24
+BELT_DELAY_SEC    = 3.0   # เวลาเดินจากกล้องถึงจุดดัน
+PUSH_DURATION     = 2.5   # เวลากระบอกค้าง
+RELAY_ACTIVE_HIGH = True  # เปลี่ยนเป็น False ถ้า relay active LOW
 
-# ── font ──────────────────────────────────────────────────────────────────────
-# OpenCV วาดภาษาไทยไม่ได้ เลยต้องใช้ PIL แทน
+# Pi font ไทย — OpenCV ไม่รองรับ unicode ต้องใช้ PIL
 _FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
-    "/usr/share/fonts/truetype/tlwg/Loma.ttf",
+    "/usr/share/fonts/truetype/tlwg/Loma.ttf",   # Thai + Latin + ตัวเลข
     "/usr/share/fonts/truetype/tlwg/Sawasdee.ttf",
     "/usr/share/fonts/truetype/thaisarun/THSarabunNew.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
 ]
 _FONT_PATH  = next((p for p in _FONT_CANDIDATES if Path(p).exists()), None)
 _FONT_CACHE = {}
@@ -63,16 +58,12 @@ def _font(size: int):
 
 
 def apply_gain(img_bgr, gain):
-    """ปรับสีแต่ละ channel ตามค่า gain"""
+    """คูณ gain ทีละ channel"""
     return np.clip(img_bgr.astype(np.float32) * gain, 0, 255).astype(np.uint8)
 
 
 def compute_wb_gain(roi_bgr):
-    """
-    ประมาณค่าปรับแสงจากพื้นหลัง (ถาด/สายพาน)
-    หลักการคือดูสีพื้นที่สว่างๆ อิ่มตัวต่ำ แล้วคำนวณว่าต้องปรับเท่าไหร่ให้เป็น grey กลางๆ
-    ถ้าหาพื้นหลังไม่เจอก็คืน [1,1,1] (ไม่ปรับอะไร)
-    """
+    """White balance จากพื้นหลัง — คืน gain ที่ทำให้พื้นหลังเทากลาง"""
     try:
         hsv     = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2HSV)
         s, v    = hsv[..., 1], hsv[..., 2]
@@ -87,67 +78,51 @@ def compute_wb_gain(roi_bgr):
 
 
 def classify_color(crop_bgr):
-    """
-    ดูว่าชิ้นไก่มีสีผิดปกติไหม โดยนับ % ของ pixel สีเขียว/เหลือง/แดงเข้ม
-    ถ้าเกิน threshold ที่กำหนด = reject
-
-    รับ crop ที่ผ่าน white balance มาแล้ว (apply_gain)
-    คืน (verdict, ข้อความ, dict สถิติ%)
-    """
+    """นับ % pixel สีผิดปกติ — คืน (verdict, ข้อความ, stats%)"""
     if crop_bgr is None or crop_bgr.size == 0:
         return "REJECT", "Empty", {}
 
     hsv     = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
-    chicken = ~((v > 220) & (s < 30))   # ตัด pixel สีขาว (พื้นหลัง) ออก
+    chicken = ~((v > 220) & (s < 30))   # ตัดพื้นหลังขาว
     n       = int(chicken.sum())
     if n < 200:
         return "REJECT", "No chicken", {}
 
     green    = chicken & (h >= 35)  & (h <= 85)  & (s >= 50)
-    yellow   = chicken & (h >= 18)  & (h <= 32)  & (s >= 60) & (v >= 80)
-    deep_red = chicken & ((h <= 8)  | (h >= 172)) & (s >= 140) & (v >= 50) & (v <= 180)
+    yellow   = chicken & (h >= 22)  & (h <= 30)  & (s >= 140) & (v >= 120)
+    deep_red = chicken & ((h <= 12) | (h >= 168)) & (s >= 90)  & (v >= 40) & (v <= 200)
 
     g, y, r = 100.*green.sum()/n, 100.*yellow.sum()/n, 100.*deep_red.sum()/n
     stats   = {"green": g, "yellow": y, "red": r}
 
     if g >= 2.0:  return "REJECT-GREEN",  f"เขียว {g:.0f}%",  stats
-    if y >= 5.0:  return "REJECT-YELLOW", f"เหลือง {y:.0f}%", stats
-    if r >= 30.0: return "REJECT-RED",    f"แดง {r:.0f}%",    stats
+    if y >= 25.0: return "REJECT-YELLOW", f"เหลือง {y:.0f}%", stats
+    if r >= 5.0:  return "REJECT-RED",    f"แดง {r:.0f}%",    stats
     return "PASS", "ปกติ", stats
 
 
 def annotate(frame, detections):
-    """
-    วาดกรอบและ label ลงภาพ
-    - กรอบสี่เหลี่ยม → OpenCV (เร็วกว่า PIL เพราะ C++)
-    - ข้อความภาษาไทย → PIL (OpenCV ไม่รองรับ unicode)
-    ฟังก์ชันนี้รันใน RenderThread ไม่ใช่ main thread
-    """
+    """วาดกรอบ (OpenCV) + label ไทย (PIL) — รันใน RenderThread"""
     if frame is None:
         return None
 
     img = frame.copy()
-
-    for det in detections:
-        x1, y1, x2, y2, _, _, verdict, _, _, _ = det
-        color = (0, 200, 0) if verdict == "PASS" else (0, 0, 230)
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 3)
-
     if not detections:
         return img
 
-    # แปลงเป็น PIL แค่ครั้งเดียว วาด label ทุก box แล้วแปลงกลับ
     pil  = PIL.Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     draw = PIL.ImageDraw.Draw(pil)
     font = _font(22)
 
     for det in detections:
-        x1, y1, _, _, _, _, verdict, reason, _, _ = det
-        color = (0, 200, 0) if verdict == "PASS" else (230, 0, 0)
-        tw    = draw.textlength(reason, font=font)
+        x1, y1, _, _, cls_name, _, verdict, reason, _, _ = det
+        color   = (0, 200, 0) if verdict == "PASS" else (230, 0, 0)
+        th_name = CLASS_TH.get(cls_name, cls_name)
+        label   = f"{th_name} - {reason}"
+        tw      = draw.textlength(label, font=font)
         draw.rectangle([x1, max(0, y1-30), x1+tw+10, max(0, y1)], fill=color)
-        draw.text((x1+5, max(0, y1-28)), reason, font=font, fill=(255, 255, 255))
+        draw.text((x1+5, max(0, y1-28)), label, font=font, fill=(255, 255, 255))
 
     return cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
 
@@ -158,22 +133,21 @@ class YOLOProcessor:
         self.model   = YOLO(str(model_path))
         self.running = True
 
-        # Lock กันหลาย thread อ่าน/เขียนตัวแปรเดียวกันพร้อมกัน
         self._frame_lock   = threading.Lock()
         self._latest_frame = None
-
         self._det_lock          = threading.Lock()
         self._latest_detections = []
 
-        self._ai_queue      = Queue(maxsize=2)   # ส่งภาพให้ AI (เก็บแค่ 2 ใบ ไม่ค้างมาก)
-        self._display_queue = Queue(maxsize=1)   # ส่งภาพให้หน้าจอ (1 ใบ = ล่าสุดเสมอ)
+        self._ai_queue      = Queue(maxsize=2)   # ภาพให้ AI
+        self._display_queue = Queue(maxsize=1)   # ภาพให้หน้าจอ (ล่าสุดเท่านั้น)
 
         self.counts      = {"pass": 0, "fail": 0, "yellow": 0, "green": 0, "red": 0}
-        self.counted_ids = set()  # tracking ID ที่นับแล้ว กันนับซ้ำ
+        self.counted_ids = set()   # tracking ID ที่นับแล้ว กันนับซ้ำ
 
-        # TODO: เปิดตอนต่อนิวเมติกจริง
-        # GPIO.setmode(GPIO.BCM)
-        # GPIO.setup(RELAY_PIN, GPIO.OUT, initial=GPIO.LOW)
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        GPIO.setup(RELAY_PIN, GPIO.OUT,
+                   initial=GPIO.LOW if RELAY_ACTIVE_HIGH else GPIO.HIGH)
 
         self._init_camera()
 
@@ -190,14 +164,28 @@ class YOLOProcessor:
 
         self._picam2 = Picamera2()
         cfg = self._picam2.create_video_configuration(
-            main={"format": "BGR888", "size": (640, 480)}
+            main={"format": "RGB888", "size": (640, 480)}
         )
         self._picam2.configure(cfg)
         self._picam2.start()
+        # AWB warmup 2 วิ แล้วล็อก — สีคงที่ไม่ drift
+        try:
+            self._picam2.set_controls({"AwbEnable": True, "AeEnable": True})
+            time.sleep(2.0)
+            md = self._picam2.capture_metadata()
+            gains = md.get("ColourGains")
+            if gains:
+                self._picam2.set_controls({
+                    "AwbEnable":   False,
+                    "ColourGains": (float(gains[0]), float(gains[1])),
+                })
+                print(f"AWB locked at gains={gains}")
+        except Exception as e:
+            print(f"camera control warn: {e}")
         print("เปิดกล้องสำเร็จ")
 
     def _camera_worker(self):
-        """จับภาพเร็วที่สุด แล้วส่งให้ AI ทุก AI_SKIP_FRAMES+1 frame"""
+        """จับภาพรัว ๆ ส่งให้ AI ตามรอบ"""
         ai_skip = 0
         while self.running:
             try:
@@ -209,22 +197,19 @@ class YOLOProcessor:
                 continue
 
             with self._frame_lock:
-                self._latest_frame = frame  # เขียนทับตลอด RenderThread ได้ภาพใหม่เสมอ
+                self._latest_frame = frame
 
             ai_skip += 1
             if ai_skip >= AI_SKIP_FRAMES + 1:
                 ai_skip = 0
                 if self._ai_queue.empty():
                     try:
-                        self._ai_queue.put_nowait(frame.copy())  # copy() กัน race condition
+                        self._ai_queue.put_nowait(frame.copy())
                     except:
                         pass
 
     def _ai_worker(self):
-        """
-        รับภาพ → YOLO track → วิเคราะห์สีทีละ box
-        ใช้ tracking ID กันนับชิ้นเดิมซ้ำ (ชิ้นหนึ่งอยู่ในเฟรมหลาย frame แต่นับแค่ครั้งแรก)
-        """
+        """YOLO track + วิเคราะห์สีแต่ละ box — ใช้ tracking ID กันนับซ้ำ"""
         while self.running:
             try:
                 frame   = self._ai_queue.get(timeout=1)
@@ -232,7 +217,7 @@ class YOLOProcessor:
                     frame, conf=CONF_THRESHOLD, persist=True, verbose=False
                 )[0]
 
-                wb_gain = compute_wb_gain(frame)  # คำนวณ white balance ครั้งเดียวต่อ frame
+                wb_gain = compute_wb_gain(frame)
 
                 new_dets = []
                 for box in results.boxes:
@@ -244,7 +229,7 @@ class YOLOProcessor:
                     if crop.size == 0:
                         continue
 
-                    # วิเคราะห์แค่ 60% ตรงกลาง เพราะขอบ box มักมีสีสายพานปนอยู่
+                    # วิเคราะห์แค่ 60% ตรงกลาง — ขอบ box มักมีสีพื้นหลังปน
                     h, w        = crop.shape[:2]
                     cw, ch      = int(w*0.6), int(h*0.6)
                     cx, cy      = (w-cw)//2, (h-ch)//2
@@ -257,10 +242,15 @@ class YOLOProcessor:
                     if tid >= 0 and tid not in self.counted_ids:
                         self.counted_ids.add(tid)
                         self._increment_count(verdict)
-
-                        # TODO: เปิดตอนต่อนิวเมติกจริง
-                        # if verdict != "PASS":
-                        #     threading.Timer(BELT_DELAY_SEC, self._trigger_pneumatic).start()
+                        self._write_txt_log(tid, verdict, reason, stats)
+                        snap_path = self._save_snapshot(crop, tid, verdict)
+                        th_cls = CLASS_TH.get(self.model.names[cls], self.model.names[cls])
+                        self.app.after(0, lambda v=verdict, r=reason, s=stats, c=th_cls, p=snap_path:
+                                       self.app.add_log_entry(v, r, s, c, p))
+                        if verdict != "PASS":
+                            self._log_reject(frame, crop, tid, verdict, reason, stats)
+                            # ไก่เสีย → เตะออกหลัง BELT_DELAY_SEC
+                            threading.Timer(BELT_DELAY_SEC, self._trigger_pneumatic).start()
 
                 with self._det_lock:
                     self._latest_detections = new_dets
@@ -274,10 +264,7 @@ class YOLOProcessor:
                 continue
 
     def _render_worker(self):
-        """
-        วาดภาพ + resize → ส่งให้ main thread แปะบนจอ
-        ถ้าหน้าจอยังแสดงภาพเก่าอยู่ ก็ทิ้งแล้วแทนด้วยภาพใหม่เลย (ไม่สะสม lag)
-        """
+        """วาด + resize → คิวให้ main thread (ทิ้งเฟรมเก่าถ้าค้าง)"""
         display_w, display_h = 640, 480
 
         while self.running:
@@ -290,7 +277,11 @@ class YOLOProcessor:
             with self._det_lock:
                 dets = list(self._latest_detections)
 
-            annotated = annotate(frame, dets)
+            # เร่งความอิ่มตัวก่อนวาด — ให้ตามองเห็นสีจริงชัด ไม่กระทบ AI
+            hsv_disp = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.int16)
+            hsv_disp[..., 1] = np.clip(hsv_disp[..., 1] * 1.6, 0, 255)
+            boosted = cv2.cvtColor(hsv_disp.astype(np.uint8), cv2.COLOR_HSV2BGR)
+            annotated = annotate(boosted, dets)
 
             panel_w = self.app.camera_frame.winfo_width()
             panel_h = self.app.camera_frame.winfo_height()
@@ -308,29 +299,82 @@ class YOLOProcessor:
             except:
                 pass
 
-            time.sleep(0.005)  # ยอมให้ AI thread ได้ใช้ CPU บ้าง
+            time.sleep(0.005)  # ยอม CPU ให้ AI thread
 
     def _update_display(self):
-        """
-        main thread loop — แค่ดึงภาพจากคิวแล้วแปะ ไม่ทำอะไรหนักเลย
-        ถ้าคิวว่างก็ข้ามไป รอรอบหน้า (ไม่ block)
-        """
+        """ดึงภาพจากคิวแล้วแปะหน้าจอ — non-blocking"""
         try:
             pil_img = self._display_queue.get_nowait()
             w, h    = pil_img.size
             ctk_img = ctk.CTkImage(pil_img, size=(w, h))
             self.app.camera_label.configure(image=ctk_img, text="")
-            self.app.camera_label._image = ctk_img  # ถ้าไม่เก็บ reference Python จะ GC ทิ้ง
+            self.app.camera_label._image = ctk_img   # กัน GC
         except Empty:
             pass
 
         self.app.after(16, self._update_display)
 
-    # TODO: เปิดตอนต่อนิวเมติกจริง
-    # def _trigger_pneumatic(self):
-    #     GPIO.output(RELAY_PIN, GPIO.HIGH)
-    #     time.sleep(PUSH_DURATION)
-    #     GPIO.output(RELAY_PIN, GPIO.LOW)
+    def _trigger_pneumatic(self):
+        """relay ON → ค้าง PUSH_DURATION → OFF"""
+        on_state, off_state = (GPIO.HIGH, GPIO.LOW) if RELAY_ACTIVE_HIGH else (GPIO.LOW, GPIO.HIGH)
+        try:
+            GPIO.output(RELAY_PIN, on_state)
+            time.sleep(PUSH_DURATION)
+            GPIO.output(RELAY_PIN, off_state)
+        except Exception as e:
+            print(f"pneumatic error: {e}")
+
+    def _save_snapshot(self, crop, tid, verdict):
+        """บันทึก crop ทุกชิ้นลง snapshots/YYYY-MM-DD/ คืน path หรือ None"""
+        if crop is None or crop.size == 0:
+            return None
+        try:
+            now     = datetime.now()
+            day_dir = SNAPS / now.strftime("%Y-%m-%d")
+            day_dir.mkdir(parents=True, exist_ok=True)
+            ts   = now.strftime("%H%M%S_%f")[:-3]
+            path = day_dir / f"{ts}_id{tid}_{verdict}.jpg"
+            cv2.imwrite(str(path), crop, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            return str(path)
+        except Exception as e:
+            print(f"snapshot error: {e}")
+            return None
+
+    def _write_txt_log(self, tid, verdict, reason, stats):
+        """log ทุกชิ้นลง logs/YYYY-MM-DD.txt"""
+        try:
+            now = datetime.now()
+            TXT_LOG.mkdir(parents=True, exist_ok=True)
+            line = (f"{now.strftime('%Y-%m-%d %H:%M:%S')}  id={tid:<4}  "
+                    f"{verdict:<14}  {reason:<20}  "
+                    f"G={stats.get('green',0):.1f}%  "
+                    f"Y={stats.get('yellow',0):.1f}%  "
+                    f"R={stats.get('red',0):.1f}%\n")
+            with (TXT_LOG / f"{now.strftime('%Y-%m-%d')}.txt").open("a") as f:
+                f.write(line)
+        except Exception as e:
+            print(f"txt log error: {e}")
+
+    def _log_reject(self, frame, crop, tid, verdict, reason, stats):
+        """เก็บภาพ + CSV ของชิ้น reject ลง rejects/YYYY-MM-DD/"""
+        try:
+            now     = datetime.now()
+            day_dir = LOG_ROOT / now.strftime("%Y-%m-%d")
+            day_dir.mkdir(parents=True, exist_ok=True)
+            ts      = now.strftime("%H%M%S_%f")[:-3]
+            base    = f"{ts}_id{tid}_{verdict}"
+
+            cv2.imwrite(str(day_dir / f"{base}_full.jpg"), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if crop is not None and crop.size > 0:
+                cv2.imwrite(str(day_dir / f"{base}_crop.jpg"), crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+            with (day_dir / "log.csv").open("a") as f:
+                if f.tell() == 0:
+                    f.write("time,tid,verdict,reason,green%,yellow%,red%\n")
+                f.write(f"{now.isoformat()},{tid},{verdict},{reason},"
+                        f"{stats.get('green',0):.2f},{stats.get('yellow',0):.2f},{stats.get('red',0):.2f}\n")
+        except Exception as e:
+            print(f"log_reject error: {e}")
 
     def _increment_count(self, verdict):
         if verdict == "PASS":
@@ -350,7 +394,7 @@ class YOLOProcessor:
         self.app.lbl_red_val.configure(text=str(self.counts["red"]))
 
     def _update_gui_stats(self, dets):
-        """อัปเดต status button + แถบสี ถ้ามีชิ้นไม่ผ่านให้แสดงชิ้นที่แย่ที่สุดก่อน"""
+        """อัปเดตปุ่มสถานะ + แถบสี — โชว์ชิ้นที่แย่สุดก่อน"""
         if not dets:
             self.app.set_status("idle")
             self.app.update_color_bars({})
@@ -363,5 +407,9 @@ class YOLOProcessor:
 if __name__ == "__main__":
     app  = InspectionApp()
     proc = YOLOProcessor(WEIGHTS, app)
-    app.mainloop()
-    proc.running = False
+    try:
+        app.mainloop()
+    finally:
+        proc.running = False
+        try: GPIO.cleanup()
+        except: pass
