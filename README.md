@@ -34,14 +34,14 @@ A Pi Camera feeds four cooperating threads. YOLO11 locates and tracks each piece
 
 ## Features
 
-- ✅ **Real-time detection** — YOLO11 ONNX tracking, 3 classes (`drumstick`, `breast`, `foreign`)
-- ✅ **Color-based QC** — per-piece HSV gate with adaptive white balance from the belt background
-- ✅ **Center-crop analysis** — inspects the middle of each box, ignoring background bleed at the edges
-- ✅ **Pneumatic reject** — GPIO24 → relay → 24 V solenoid, timed to the belt travel delay
-- ✅ **Wireless weighing** — ESP8266 load cell streams grams over Wi-Fi (UDP) or USB; Pi does peak-hold detection as each piece crosses the scale
-- ✅ **Deduplication** — track IDs + cooldown stop the same piece being counted twice
-- ✅ **Full audit trail** — reject crops, per-piece TXT/CSV logs, and thumbnail snapshots, all foldered by day
-- ✅ **Thai touchscreen UI** — full-screen CustomTkinter dashboard with live counts and color bars
+- [x] **Real-time detection** — YOLO11 ONNX tracking, 3 classes (`drumstick`, `breast`, `foreign`)
+- [x] **Color-based QC** — per-piece HSV gate with adaptive white balance from the belt background
+- [x] **Center-crop analysis** — inspects the middle of each box, ignoring background bleed at the edges
+- [x] **Pneumatic reject** — GPIO24 → relay → 24 V solenoid, timed to the belt travel delay
+- [x] **Wireless weighing** — ESP8266 load cell streams grams over Wi-Fi (UDP) or USB; Pi does peak-hold detection as each piece crosses the scale
+- [x] **Deduplication** — track IDs + cooldown stop the same piece being counted twice
+- [x] **Full audit trail** — reject crops, per-piece TXT/CSV logs, and thumbnail snapshots, all foldered by day
+- [x] **Thai touchscreen UI** — full-screen CustomTkinter dashboard with live counts and color bars
 
 ## Rejection criteria
 
