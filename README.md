@@ -21,11 +21,11 @@ A production-line vision system that watches chicken pieces travel down a convey
 A Pi Camera feeds four cooperating threads. YOLO11 locates and tracks each piece; an HSV color gate inspects the center of every detection for spoilage and foreign matter; verdicts drive a GPIO relay that fires a pneumatic pusher after the belt-delay. Nothing blocks the display.
 
 ```
- Camera ──▶ AI (YOLO track + HSV gate) ──▶ Render ──▶ Display
-                     │                                   ▲
-                     ├──▶ GPIO relay ──▶ pneumatic reject │
-                     └──▶ reject crops · CSV/TXT logs · snapshots
- ESP8266 load cell ──(UDP/serial, 10 Hz)──▶ weight peak-hold ──┘
+Camera ─▶ AI ─┬─▶ Render ─▶ Display
+              ├─▶ GPIO relay ─▶ pneumatic reject
+              └─▶ reject crops · CSV/TXT logs · snapshots
+
+ESP8266 load cell ─(UDP / serial, 10 Hz)─▶ weight peak-hold ─▶ Display
 ```
 
 <div align="center">
