@@ -5,3 +5,4 @@ val: images/val
 names:
   0: chicken-drumstick
   1: chicken-breast
+  2: foreign

@@ -1,0 +1,135 @@
+<svg viewBox="0 0 1100 1580" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>แผนผังการทำงาน ระบบตรวจคุณภาพชิ้นไก่</title>
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#374151"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: Sarabun,'Noto Sans Thai','TH Sarabun New',Arial,sans-serif; fill:#1e293b; }
+    .sh { fill:#fff; stroke:#1d4ed8; stroke-width:2.5; }
+    .ln { stroke:#374151; stroke-width:2; fill:none; }
+    .ar { stroke:#374151; stroke-width:2; fill:none; marker-end:url(#arr); }
+    .lb { text-anchor:middle; dominant-baseline:middle; font-size:18; }
+    .sb { text-anchor:middle; dominant-baseline:middle; font-size:15; fill:#374151; }
+    .tg { font-size:14; fill:#374151; text-anchor:middle; }
+  </style>
+
+  <rect width="1100" height="1580" fill="#f8fafc"/>
+  <text x="550" y="32" text-anchor="middle" font-size="20" font-weight="bold">แผนผังการทำงาน — ระบบตรวจคุณภาพชิ้นไก่</text>
+
+  <!-- 1. เริ่มต้น -->
+  <rect x="420" y="50" width="260" height="62" rx="31" class="sh"/>
+  <text x="550" y="81" class="lb" font-weight="bold">เริ่มต้น</text>
+  <line x1="550" y1="112" x2="550" y2="140" class="ar"/>
+
+  <!-- 2. โหลดโมเดล YOLO (Predefined Process) -->
+  <rect x="310" y="140" width="480" height="76" class="sh"/>
+  <line x1="326" y1="140" x2="326" y2="216" stroke="#1d4ed8" stroke-width="2.5"/>
+  <line x1="774" y1="140" x2="774" y2="216" stroke="#1d4ed8" stroke-width="2.5"/>
+  <text x="550" y="166" class="lb">โหลดโมเดล YOLO (yolo11s.pt)</text>
+  <text x="550" y="194" class="sb">ตั้งค่ากล้อง + รีเลย์ GPIO</text>
+  <line x1="550" y1="216" x2="550" y2="244" class="ar"/>
+
+  <!-- 3. เริ่ม 4 เธรด (Process) -->
+  <rect x="310" y="244" width="480" height="76" class="sh"/>
+  <text x="550" y="270" class="lb">เริ่มทำงาน 4 เธรด</text>
+  <text x="550" y="298" class="sb">กล้อง / AI / วาดภาพ / หน้าจอ</text>
+  <line x1="550" y1="320" x2="550" y2="348" class="ar"/>
+
+  <!-- 4. Off-page [ก] -->
+  <polygon points="470,348 630,348 630,384 550,400 470,384" class="sh"/>
+  <text x="550" y="366" class="lb" font-weight="bold" fill="#dc2626">ก</text>
+  <line x1="550" y1="400" x2="550" y2="428" class="ar"/>
+
+  <!-- 5. รับภาพ (Data I/O) -->
+  <polygon points="330,428 770,428 734,480 294,480" class="sh"/>
+  <text x="532" y="454" class="lb">รับภาพจากกล้อง Pi Camera</text>
+  <line x1="550" y1="480" x2="550" y2="508" class="ar"/>
+
+  <!-- 6. ตรวจจับ YOLO (Predefined Process) -->
+  <rect x="310" y="508" width="480" height="76" class="sh"/>
+  <line x1="326" y1="508" x2="326" y2="584" stroke="#1d4ed8" stroke-width="2.5"/>
+  <line x1="774" y1="508" x2="774" y2="584" stroke="#1d4ed8" stroke-width="2.5"/>
+  <text x="550" y="534" class="lb">ตรวจจับชิ้นไก่ด้วย YOLO</text>
+  <text x="550" y="562" class="sb">น่องไก่ / อกไก่ + หมายเลขติดตาม</text>
+  <line x1="550" y1="584" x2="550" y2="612" class="ar"/>
+
+  <!-- 7. วิเคราะห์สี HSV (Process) -->
+  <rect x="310" y="612" width="480" height="76" class="sh"/>
+  <text x="550" y="638" class="lb">วิเคราะห์สี HSV ต่อชิ้นไก่</text>
+  <text x="550" y="666" class="sb">เขียว ≥2% / เหลือง ≥5% / แดงเข้ม ≥30%</text>
+  <line x1="550" y1="688" x2="550" y2="716" class="ar"/>
+
+  <!-- 8. Decision: สีผิดปกติ? -->
+  <polygon points="550,716 790,808 550,900 310,808" class="sh"/>
+  <text x="550" y="798" class="lb">สีผิดปกติ?</text>
+  <text x="550" y="820" class="sb">(เกินเกณฑ์ เขียว/เหลือง/แดง)</text>
+
+  <!-- ใช่ → ซ้าย -->
+  <line x1="310" y1="808" x2="170" y2="808" class="ln"/>
+  <line x1="170" y1="808" x2="170" y2="930" class="ar"/>
+  <text x="242" y="794" class="tg">ใช่</text>
+
+  <!-- ไม่ใช่ → ขวา -->
+  <line x1="790" y1="808" x2="940" y2="808" class="ln"/>
+  <line x1="940" y1="808" x2="940" y2="930" class="ar"/>
+  <text x="868" y="794" class="tg">ไม่ใช่</text>
+
+  <!-- 9ก. บันทึก: ไม่ผ่าน -->
+  <rect x="70" y="930" width="200" height="68" class="sh"/>
+  <text x="170" y="956" class="lb" fill="#b91c1c">บันทึก: ไม่ผ่าน</text>
+  <text x="170" y="980" class="sb">ครอปภาพ + บันทึกประวัติ</text>
+  <line x1="170" y1="998" x2="170" y2="1030" class="ar"/>
+
+  <!-- 9ข. บันทึก: ผ่าน -->
+  <rect x="840" y="930" width="200" height="68" class="sh"/>
+  <text x="940" y="956" class="lb" fill="#15803d">บันทึก: ผ่าน</text>
+  <text x="940" y="980" class="sb">กรองซ้ำด้วยหมายเลขติดตาม</text>
+
+  <!-- 10. รีเลย์ GPIO -->
+  <rect x="70" y="1030" width="200" height="68" class="sh"/>
+  <text x="170" y="1056" class="lb">เปิดรีเลย์ GPIO</text>
+  <text x="170" y="1080" class="sb">ดันชิ้นไก่ที่ไม่ผ่านออก</text>
+
+  <!-- รวมเส้น -->
+  <line x1="170" y1="1098" x2="170" y2="1140" class="ln"/>
+  <line x1="170" y1="1140" x2="549" y2="1140" class="ln"/>
+  <line x1="940" y1="998" x2="940" y2="1140" class="ln"/>
+  <line x1="940" y1="1140" x2="551" y2="1140" class="ln"/>
+  <line x1="550" y1="1140" x2="550" y2="1168" class="ar"/>
+
+  <!-- ESP8266 input (Data I/O) -->
+  <polygon points="820,1178 1000,1178 982,1226 802,1226" class="sh"/>
+  <text x="902" y="1196" class="sb">รับน้ำหนักจาก</text>
+  <text x="902" y="1214" class="sb">ESP8266</text>
+  <line x1="802" y1="1202" x2="790" y2="1202" class="ar"/>
+
+  <!-- 11. อัปเดตหน้าจอ (Process) -->
+  <rect x="310" y="1168" width="480" height="76" class="sh"/>
+  <text x="550" y="1194" class="lb">อัปเดตหน้าจอ + สถิติรวม</text>
+  <text x="550" y="1222" class="sb">แสดงผล / น้ำหนัก / จำนวนผ่าน-ไม่ผ่าน</text>
+  <line x1="550" y1="1244" x2="550" y2="1272" class="ar"/>
+
+  <!-- 12. Decision: ปิดระบบ? -->
+  <polygon points="550,1272 760,1360 550,1448 340,1360" class="sh"/>
+  <text x="550" y="1350" class="lb">ปิดระบบ?</text>
+  <text x="550" y="1372" class="sb">กด Esc หรือรับสัญญาณปิด</text>
+
+  <!-- ใช่ → ลง -->
+  <line x1="550" y1="1448" x2="550" y2="1476" class="ar"/>
+  <text x="574" y="1463" class="tg" text-anchor="start">ใช่</text>
+
+  <!-- ไม่ใช่ → off-page [ก] ขวา -->
+  <line x1="760" y1="1360" x2="826" y2="1360" class="ar"/>
+  <text x="793" y="1346" class="tg">ไม่ใช่</text>
+  <polygon points="826,1342 966,1342 966,1378 896,1394 826,1378" class="sh"/>
+  <text x="896" y="1360" class="lb" font-weight="bold" fill="#dc2626">ก</text>
+
+  <!-- 13. สิ้นสุด -->
+  <rect x="420" y="1476" width="260" height="62" rx="31" class="sh"/>
+  <text x="550" y="1507" class="lb" font-weight="bold">สิ้นสุด</text>
+
+  <!-- คำอธิบาย -->
+  <text x="550" y="1564" text-anchor="middle" font-size="13" fill="#94a3b8">ออฟเพจ [ก] = วนซ้ำ | กล่องเส้นคู่ = กระบวนการย่อย | สี่เหลี่ยมเอียง = ข้อมูลเข้า-ออก | ขนมเปียกปูน = เงื่อนไข</text>
+</svg>

@@ -14,6 +14,7 @@ class InspectionApp(ctk.CTk):
         super().__init__()
         self.log_entries = deque(maxlen=self.MAX_LOG_ENTRIES)
         self._log_listbox = None
+        self.on_clear_extra = None   # hook ที่ main.py ตั้งให้ล้าง weight เพิ่ม
 
         self.title("Chicken Quality Control")
 
@@ -60,7 +61,7 @@ class InspectionApp(ctk.CTk):
         left.grid(row=0, column=0, sticky="nsew")
         left.grid_columnconfigure(0, weight=1)
         left.grid_columnconfigure(1, weight=1)
-        for r in range(7):
+        for r in range(8):
             left.grid_rowconfigure(r, weight=1)
 
         ctk.CTkLabel(
@@ -113,9 +114,32 @@ class InspectionApp(ctk.CTk):
         )
         self.toggle_btn.grid(row=5, column=0, columnspan=2, padx=20, pady=(5, 5), sticky="ew")
 
+        # แผงน้ำหนัก (BLE จาก Pi Zero / load cell)
+        weight_panel = ctk.CTkFrame(left, fg_color="#eef4ff", corner_radius=10)
+        weight_panel.grid(row=6, column=0, columnspan=2, padx=15, pady=5, sticky="ew")
+        weight_panel.grid_columnconfigure(0, weight=1)
+        weight_panel.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(weight_panel, text="น้ำหนักสูงสุด", font=self.font_labels, text_color="#4a6fa5"
+                     ).grid(row=0, column=0, sticky="s")
+        ctk.CTkLabel(weight_panel, text="รวมทั้งหมด", font=self.font_labels, text_color="#4a6fa5"
+                     ).grid(row=0, column=1, sticky="s")
+
+        self.lbl_weight_now = ctk.CTkLabel(weight_panel, text="-- g",
+                                           font=self.font_numbers, text_color="#222")
+        self.lbl_weight_now.grid(row=1, column=0, sticky="n")
+        self.lbl_weight_total = ctk.CTkLabel(weight_panel, text="0.000 kg",
+                                             font=self.font_numbers, text_color="#1a8a3d")
+        self.lbl_weight_total.grid(row=1, column=1, sticky="n")
+
+        self.lbl_weight_status = ctk.CTkLabel(weight_panel, text="รอ ESP8266 ส่งน้ำหนัก...",
+                                              font=("Sarabun", int(13*scale)),
+                                              text_color="#888")
+        self.lbl_weight_status.grid(row=2, column=0, columnspan=2, pady=(0, 4))
+
         # progress bar % สีผิดปกติของชิ้นปัจจุบัน
         colour_panel = ctk.CTkFrame(left, fg_color="white")
-        colour_panel.grid(row=6, column=0, columnspan=2, padx=15, pady=10, sticky="ew")
+        colour_panel.grid(row=7, column=0, columnspan=2, padx=15, pady=10, sticky="ew")
         colour_panel.grid_columnconfigure(1, weight=1)
 
         self.color_bars = {}
@@ -277,6 +301,21 @@ class InspectionApp(ctk.CTk):
         if self._log_listbox is not None:
             for w in self._log_listbox.winfo_children():
                 w.destroy()
+        # ล้างน้ำหนักด้วย ถ้า main.py ตั้ง hook ไว้
+        if callable(self.on_clear_extra):
+            try: self.on_clear_extra()
+            except Exception as e: print(f"clear_extra err: {e}")
+
+    def update_weight(self, peak_g: float, total_kg: float):
+        """อัปเดต peak น้ำหนักจาก ESP8266 — ค่าลบ clamp เป็น 0"""
+        if peak_g < 0: peak_g = 0.0
+        self.lbl_weight_now.configure(text=f"{peak_g:.1f} g")
+        self.lbl_weight_total.configure(text=f"{total_kg:.3f} kg")
+        self.lbl_weight_status.configure(text="ESP8266 เชื่อมต่อแล้ว", text_color="#1a8a3d")
+
+    def on_weight_peak(self, peak_g: float, total_kg: float):
+        """เรียกเมื่อมีชิ้นใหม่ผ่านแท่นชั่ง (peak detected)"""
+        self.lbl_weight_total.configure(text=f"{total_kg:.3f} kg")
 
     def set_status(self, state: str, reason: str = ""):
         """เปลี่ยนสีปุ่มสถานะ: pass / reject / idle"""

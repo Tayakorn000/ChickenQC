@@ -17,15 +17,19 @@ from ultralytics import YOLO
 import customtkinter as ctk
 
 from GUI import InspectionApp
+from weight import WeightReceiver
 
 ROOT     = Path(__file__).parent
-WEIGHTS  = ROOT / "runs" / "detect" / "runs" / "chicken_v2" / "weights" / "best.onnx"
+WEIGHTS  = ROOT / "runs" / "chicken_v3.onnx"
 LOG_ROOT = ROOT / "rejects"   # crop ของชิ้น reject แยกตามวัน
 TXT_LOG  = ROOT / "logs"      # txt log ทุกชิ้น แยกตามวัน
 SNAPS    = ROOT / "snapshots" # ภาพ thumbnail ทุกชิ้น สำหรับโชว์ในหน้าประวัติ
 
+CAMERA_MOCK    = False  # True = ข้ามกล้อง ใช้ภาพดำแทน (ทดสอบ GUI/weight)
+
 AI_SKIP_FRAMES = 2     # ส่งให้ AI ทุก ๆ N+1 frame
 CONF_THRESHOLD = 0.35  # ความมั่นใจขั้นต่ำของ YOLO
+COUNT_COOLDOWN = 2.5   # วินาทีขั้นต่ำระหว่างนับ 2 ชิ้น — กันกล้องนับซ้ำชิ้นเดียว
 
 CLASS_TH = {           # อังกฤษ → ไทย สำหรับ label
     "chicken-drumstick": "น่องไก่",
@@ -40,7 +44,7 @@ RELAY_ACTIVE_HIGH = True  # เปลี่ยนเป็น False ถ้า re
 
 # Pi font ไทย — OpenCV ไม่รองรับ unicode ต้องใช้ PIL
 _FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/tlwg/Loma.ttf",   # Thai + Latin + ตัวเลข
+    "/usr/share/fonts/truetype/tlwg/Loma.ttf",
     "/usr/share/fonts/truetype/tlwg/Sawasdee.ttf",
     "/usr/share/fonts/truetype/thaisarun/THSarabunNew.ttf",
     "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
@@ -92,10 +96,14 @@ def classify_color(crop_bgr):
     green    = chicken & (h >= 35)  & (h <= 85)  & (s >= 50)
     yellow   = chicken & (h >= 22)  & (h <= 30)  & (s >= 140) & (v >= 120)
     deep_red = chicken & ((h <= 12) | (h >= 168)) & (s >= 90)  & (v >= 40) & (v <= 200)
+    # สิ่งแปลกปลอม: สีฟ้า/น้ำเงิน/ม่วง ไม่มีในเนื้อไก่ (ถุงมือ พลาสติก เครื่องมือ)
+    foreign  = chicken & (h >= 90)  & (h <= 150) & (s >= 60)  & (v >= 40)
 
     g, y, r = 100.*green.sum()/n, 100.*yellow.sum()/n, 100.*deep_red.sum()/n
-    stats   = {"green": g, "yellow": y, "red": r}
+    f       = 100.*foreign.sum()/n
+    stats   = {"green": g, "yellow": y, "red": r, "foreign": f}
 
+    if f >= 15.0: return "REJECT-FOREIGN", f"แปลกปลอม {f:.0f}%", stats
     if g >= 2.0:  return "REJECT-GREEN",  f"เขียว {g:.0f}%",  stats
     if y >= 25.0: return "REJECT-YELLOW", f"เหลือง {y:.0f}%", stats
     if r >= 5.0:  return "REJECT-RED",    f"แดง {r:.0f}%",    stats
@@ -143,6 +151,7 @@ class YOLOProcessor:
 
         self.counts      = {"pass": 0, "fail": 0, "yellow": 0, "green": 0, "red": 0}
         self.counted_ids = set()   # tracking ID ที่นับแล้ว กันนับซ้ำ
+        self._last_count_at = 0.0  # fallback dedupe ตอน tid = -1
 
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
@@ -158,11 +167,24 @@ class YOLOProcessor:
         self._update_display()
 
     def _init_camera(self):
+        global CAMERA_MOCK
+        if CAMERA_MOCK:
+            self._picam2 = None
+            print("CAMERA_MOCK=True — ข้ามกล้อง")
+            return
+
         if hasattr(self, '_picam2') and self._picam2:
             try: self._picam2.stop(); self._picam2.close()
             except: pass
 
-        self._picam2 = Picamera2()
+        try:
+            self._picam2 = Picamera2()
+        except Exception as e:
+            print(f"ไม่พบกล้อง ({e}) — fallback เป็น MOCK")
+            CAMERA_MOCK = True
+            self._picam2 = None
+            return
+
         cfg = self._picam2.create_video_configuration(
             main={"format": "RGB888", "size": (640, 480)}
         )
@@ -187,14 +209,20 @@ class YOLOProcessor:
     def _camera_worker(self):
         """จับภาพรัว ๆ ส่งให้ AI ตามรอบ"""
         ai_skip = 0
+        _mock_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
         while self.running:
-            try:
-                frame = self._picam2.capture_array()
-            except Exception as e:
-                print(f"กล้องมีปัญหา: {e} รีสตาร์ท...")
-                time.sleep(0.5)
-                self._init_camera()
-                continue
+            if CAMERA_MOCK:
+                frame = _mock_frame
+                time.sleep(0.033)
+            else:
+                try:
+                    frame = self._picam2.capture_array()
+                except Exception as e:
+                    print(f"กล้องมีปัญหา: {e} รีสตาร์ท...")
+                    time.sleep(0.5)
+                    self._init_camera()
+                    continue
 
             with self._frame_lock:
                 self._latest_frame = frame
@@ -239,8 +267,15 @@ class YOLOProcessor:
                     new_dets.append((x1, y1, x2, y2, self.model.names[cls],
                                      float(box.conf.item()), verdict, reason, tid, stats))
 
-                    if tid >= 0 and tid not in self.counted_ids:
-                        self.counted_ids.add(tid)
+                    # กันนับซ้ำ: ต้องเป็น tid ใหม่ (หรือ tid=-1) และห่างจากชิ้นก่อน > cooldown
+                    # ชิ้นจริงห่างกัน ~24s — cooldown กันกรณี track ID สลับกลางชิ้นแล้วนับซ้ำ
+                    now_t = time.time()
+                    fresh = (tid >= 0 and tid not in self.counted_ids) or tid < 0
+                    is_new = fresh and (now_t - self._last_count_at > COUNT_COOLDOWN)
+                    if is_new:
+                        if tid >= 0:
+                            self.counted_ids.add(tid)
+                        self._last_count_at = now_t
                         self._increment_count(verdict)
                         self._write_txt_log(tid, verdict, reason, stats)
                         snap_path = self._save_snapshot(crop, tid, verdict)
@@ -251,6 +286,12 @@ class YOLOProcessor:
                             self._log_reject(frame, crop, tid, verdict, reason, stats)
                             # ไก่เสีย → เตะออกหลัง BELT_DELAY_SEC
                             threading.Timer(BELT_DELAY_SEC, self._trigger_pneumatic).start()
+                        else:
+                            # ไก่ PASS → แจ้งฝั่งชั่งน้ำหนัก (arm_pass ตอนนี้เป็น no-op)
+                            w = getattr(self, "weight", None)
+                            if w is not None:
+                                try: w.arm_pass()
+                                except Exception as e: print(f"arm_pass err: {e}")
 
                 with self._det_lock:
                     self._latest_detections = new_dets
@@ -407,6 +448,19 @@ class YOLOProcessor:
 if __name__ == "__main__":
     app  = InspectionApp()
     proc = YOLOProcessor(WEIGHTS, app)
+
+    # รับน้ำหนักจาก ESP8266 ผ่าน UDP — ไม่ให้ crash ทำ main.py ตาย
+    try:
+        weight = WeightReceiver(
+            on_live=lambda g, kg: app.after(0, app.update_weight, g, kg),
+            on_peak=lambda g, kg: app.after(0, app.on_weight_peak, g, kg),
+        )
+        weight.start()
+        proc.weight = weight                      # ให้ AI worker เรียก arm_pass() ได้
+        app.on_clear_extra = weight.clear_total   # ปุ่ม "ล้างประวัติ" ล้างน้ำหนักด้วย
+    except Exception as e:
+        print(f"weight init skipped: {e}")
+
     try:
         app.mainloop()
     finally:
