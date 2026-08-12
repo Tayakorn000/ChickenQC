@@ -55,6 +55,25 @@ Evaluated on the center crop, in order — first hit wins:
 | 🔴 `REJECT-RED` | deep-red pixels ≥ 5% | bruising / blood |
 | ✅ `PASS` | none of the above | ships + weighed |
 
+## Results
+
+Trained on the 3-class dataset for 80 epochs (YOLO11s → `chicken_v3.onnx`):
+
+| Metric | Score |
+|---|---|
+| mAP@50 | **97.3%** |
+| mAP@50–95 | **85.9%** |
+| Precision | **96.9%** |
+| Recall | **97.8%** |
+
+<div align="center">
+<img src="docs/sample_predictions.jpg" alt="Sample predictions" width="80%"><br>
+<sub>Validation predictions</sub>
+<br><br>
+<img src="docs/train_results.png" alt="Training curves" width="49%">
+<img src="docs/confusion_matrix.png" alt="Confusion matrix" width="35%">
+</div>
+
 ## Hardware
 
 | Part | Role |
