@@ -1,0 +1,39 @@
+digraph qc_p2 {
+  rankdir=TB;
+  splines=ortho;
+  nodesep=0.7;
+  ranksep=0.6;
+  bgcolor="white";
+  labelloc="t";
+  label="ผังงานคัดแยกไก่ — หน้า 2/2 (นับ บันทึก ดีดออก)";
+  fontname="Sukhumvit Set"; fontsize=17;
+  node [fontname="Sukhumvit Set", fontsize=13, color=black, fillcolor=white, style=filled, penwidth=1.4];
+  edge [fontname="Sukhumvit Set", fontsize=12, color=black, arrowsize=0.8];
+
+  A       [shape=circle, label="A", width=0.42, fixedsize=true];
+  CENTER  [shape=diamond, label="อยู่กลางเฟรม\nและเป็นชิ้นใหม่?", width=2.9, height=1.3];
+  B       [shape=circle, label="B", width=0.42, fixedsize=true];
+  COUNT   [shape=box, label="นับ +1 และบันทึก log"];
+  SNAP    [shape=note, label="บันทึกรูป + กรอบ + ป้ายผล"];
+  SHOW    [shape=cds, label="แสดงผลบนหน้าจอ"];
+  REJQ    [shape=diamond, label="ผลไม่ผ่าน?", width=2.1, height=1.0];
+  KICK    [shape=box, label="สั่งรีเลย์ดีดออก (หน่วง 5.5 วิ)"];
+  PASSOUT [shape=box, label="ปล่อยผ่านไปขั้นตอนต่อไป"];
+  END1    [shape=box, style="rounded,filled", label="สิ้นสุด"];
+  END2    [shape=box, style="rounded,filled", label="สิ้นสุด"];
+
+  A -> CENTER;
+
+  CENTER -> B [xlabel="ไม่"];
+  CENTER -> COUNT [xlabel="ใช่"];
+  { rank=same; CENTER; B; }
+
+  COUNT -> SNAP -> SHOW -> REJQ;
+
+  REJQ -> KICK [xlabel="ใช่"];
+  REJQ -> PASSOUT [xlabel="ไม่"];
+  { rank=same; REJQ; KICK; }
+
+  KICK -> END1;
+  PASSOUT -> END2;
+}

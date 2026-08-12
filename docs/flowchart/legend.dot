@@ -1,0 +1,25 @@
+digraph legend {
+  rankdir=TB;
+  bgcolor="white";
+  nodesep=0.5;
+  ranksep=0.45;
+  labelloc="t";
+  label="สัญลักษณ์ที่ใช้ (มาตรฐาน ANSI Flowchart)";
+  fontname="Sukhumvit Set"; fontsize=18;
+  node [fontname="Sukhumvit Set", fontsize=13, color=black, fillcolor=white, style=filled, penwidth=1.4];
+  edge [style=invis];
+
+  T   [shape=box, style="rounded,filled", label="Terminator — เริ่มต้น / สิ้นสุด"];
+  D   [shape=parallelogram, label="Data — รับ/ส่งข้อมูล (กล้อง, เซนเซอร์)"];
+  P   [shape=box, label="Process — ขั้นตอนทั่วไป"];
+  PP  [shape=plaintext, margin=0, label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6"><TR><TD WIDTH="9"> </TD><TD>Predefined Process — งานสำเร็จรูป (AI, สูตรคำนวณ)</TD><TD WIDTH="9"> </TD></TR></TABLE>>];
+  Q   [shape=diamond, label="Decision — จุดตัดสินใจ ใช่/ไม่", width=3.6, height=1.3];
+  DOC [shape=note, label="Document — ไฟล์/รูปที่บันทึก"];
+  DIS [shape=cds, label="Display — แสดงผลบนหน้าจอ"];
+  H   [shape=hexagon, label="Preparation — ตั้งค่า/เริ่มระบบ"];
+  C   [shape=circle, label="A", width=0.5, fixedsize=true];
+  CL  [shape=plaintext, label="Connector — จุดเชื่อมข้ามหน้า (A, B)"];
+
+  T -> D -> P -> PP -> Q -> DOC -> DIS -> H -> C;
+  { rank=same; C; CL; }
+}

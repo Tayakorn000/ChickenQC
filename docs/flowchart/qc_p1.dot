@@ -1,0 +1,71 @@
+digraph qc_p1 {
+  rankdir=TB;
+  splines=ortho;
+  nodesep=0.7;
+  ranksep=0.6;
+  bgcolor="white";
+  labelloc="t";
+  label="ผังงานคัดแยกไก่ — หน้า 1/2 (ตรวจจับและตัดสิน)";
+  fontname="Sukhumvit Set"; fontsize=17;
+  node [fontname="Sukhumvit Set", fontsize=13, color=black, fillcolor=white, style=filled, penwidth=1.4];
+  edge [fontname="Sukhumvit Set", fontsize=12, color=black, arrowsize=0.8];
+
+  START   [shape=box, style="rounded,filled", label="เริ่มต้น"];
+  CAM     [shape=parallelogram, label="รับภาพจากกล้อง"];
+  DET     [shape=plaintext, margin=0, label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6"><TR><TD WIDTH="9"> </TD><TD>ตรวจจับวัตถุด้วย AI (YOLO)<BR/>น่อง / อก / แปลกปลอม</TD><TD WIDTH="9"> </TD></TR></TABLE>>];
+  LOOP    [shape=box, label="พิจารณาทีละชิ้น"];
+  ROI     [shape=diamond, label="อยู่ในแถบสายพาน?", width=2.4, height=1.1];
+  CONF    [shape=diamond, label="เป็นไก่แต่มั่นใจต่ำ?", width=2.6, height=1.1];
+  CROP    [shape=box, label="ครอบภาพวัตถุ"];
+  ISFOR   [shape=diamond, label="เป็นสิ่งแปลกปลอม?", width=2.6, height=1.1];
+  CONFIRM [shape=diamond, label="ยืนยันแปลกปลอม?\n(ขนาด/ตำแหน่ง/สี)", width=2.9, height=1.3];
+  HASF    [shape=diamond, label="มีแปลกปลอมปนในเฟรม?", width=3.0, height=1.2];
+  COL     [shape=plaintext, margin=0, label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6"><TR><TD WIDTH="9"> </TD><TD>ตรวจสีเนื้อไก่</TD><TD WIDTH="9"> </TD></TR></TABLE>>];
+  PASSQ   [shape=diamond, label="สีผ่านเกณฑ์?", width=2.2, height=1.0];
+  RJF     [shape=box, label="ไม่ผ่าน (แปลกปลอม)"];
+  RJP     [shape=box, label="ไม่ผ่าน (มีแปลกปลอมปน)"];
+  RJC     [shape=box, label="ไม่ผ่าน (สีผิดปกติ)"];
+  PASS    [shape=box, label="ผ่าน"];
+
+  B1 [shape=circle, label="B", width=0.42, fixedsize=true];
+  B2 [shape=circle, label="B", width=0.42, fixedsize=true];
+  B3 [shape=circle, label="B", width=0.42, fixedsize=true];
+  A1 [shape=circle, label="A", width=0.42, fixedsize=true];
+  A2 [shape=circle, label="A", width=0.42, fixedsize=true];
+  A3 [shape=circle, label="A", width=0.42, fixedsize=true];
+  A4 [shape=circle, label="A", width=0.42, fixedsize=true];
+
+  START -> CAM -> DET -> LOOP -> ROI;
+
+  ROI -> B1 [xlabel="ไม่"];
+  ROI -> CONF [xlabel="ใช่"];
+  { rank=same; ROI; B1; }
+
+  CONF -> B2 [xlabel="ใช่"];
+  CONF -> CROP [xlabel="ไม่"];
+  { rank=same; CONF; B2; }
+
+  CROP -> ISFOR;
+
+  ISFOR -> CONFIRM [xlabel="ใช่"];
+  ISFOR -> HASF [xlabel="ไม่"];
+  { rank=same; ISFOR; CONFIRM; }
+
+  CONFIRM -> B3 [xlabel="ไม่"];
+  CONFIRM -> RJF [xlabel="ใช่"];
+  { rank=same; CONFIRM; B3; }
+
+  HASF -> RJP [xlabel="ใช่"];
+  HASF -> COL [xlabel="ไม่"];
+  { rank=same; HASF; RJP; }
+
+  COL -> PASSQ;
+  PASSQ -> PASS [xlabel="ใช่"];
+  PASSQ -> RJC [xlabel="ไม่"];
+  { rank=same; PASSQ; PASS; }
+
+  RJF -> A1;
+  RJP -> A2;
+  RJC -> A3;
+  PASS -> A4;
+}

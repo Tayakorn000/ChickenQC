@@ -29,7 +29,9 @@ ESP8266 load cell ─(UDP / serial, 10 Hz)─▶ weight peak-hold ─▶ Display
 ```
 
 <div align="center">
-<img src="chicken_qc_flowchart.svg" alt="System flowchart (Thai)" width="620">
+<img src="docs/flowchart/qc_p1.png" alt="QC flowchart page 1 (Thai)" width="88%">
+<img src="docs/flowchart/qc_p2.png" alt="QC flowchart page 2 (Thai)" width="88%">
+<br><sub>Full QC flowchart (Thai). Weight subsystem: <a href="docs/flowchart/weight_p1.png">page 1</a> · <a href="docs/flowchart/weight_p2.png">page 2</a> · <a href="docs/flowchart/legend.png">symbol legend</a></sub>
 </div>
 
 ## Features

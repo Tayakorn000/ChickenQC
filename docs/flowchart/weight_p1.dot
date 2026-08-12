@@ -1,0 +1,29 @@
+digraph weight_p1 {
+  rankdir=TB;
+  splines=ortho;
+  nodesep=0.7;
+  ranksep=0.6;
+  bgcolor="white";
+  labelloc="t";
+  label="ผังงานชั่งน้ำหนัก — หน้า 1/2 (ฝั่ง ESP8266 บอร์ดชั่ง)";
+  fontname="Sukhumvit Set"; fontsize=17;
+  node [fontname="Sukhumvit Set", fontsize=13, color=black, fillcolor=white, style=filled, penwidth=1.4];
+  edge [fontname="Sukhumvit Set", fontsize=12, color=black, arrowsize=0.8];
+
+  S1 [shape=box, style="rounded,filled", label="เริ่มต้น"];
+  S2 [shape=box, label="ไฟเข้า — ESP เริ่มระบบ"];
+  S3 [shape=diamond, label="โหมดเชื่อมต่อ?", width=2.2, height=1.0];
+  S4 [shape=box, label="เชื่อม WiFi"];
+  S5 [shape=box, label="ต่อ USB"];
+  S6 [shape=parallelogram, label="อ่านค่าน้ำหนักจาก load cell"];
+  S7 [shape=parallelogram, label="ส่งค่าน้ำหนักไปยัง Pi (10 ครั้ง/วิ)"];
+  C  [shape=circle, label="C", width=0.42, fixedsize=true];
+
+  S1 -> S2 -> S3;
+  S3 -> S5 [xlabel="Serial"];
+  S3 -> S4 [xlabel="UDP"];
+  { rank=same; S3; S5; }
+  S4 -> S6;
+  S5 -> S6;
+  S6 -> S7 -> C;
+}

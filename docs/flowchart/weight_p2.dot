@@ -1,0 +1,39 @@
+digraph weight_p2 {
+  rankdir=TB;
+  splines=ortho;
+  nodesep=0.7;
+  ranksep=0.6;
+  bgcolor="white";
+  labelloc="t";
+  label="ผังงานชั่งน้ำหนัก — หน้า 2/2 (ฝั่ง Raspberry Pi โปรแกรมรับน้ำหนัก)";
+  fontname="Sukhumvit Set"; fontsize=17;
+  node [fontname="Sukhumvit Set", fontsize=13, color=black, fillcolor=white, style=filled, penwidth=1.4];
+  edge [fontname="Sukhumvit Set", fontsize=12, color=black, arrowsize=0.8];
+
+  C   [shape=circle, label="C", width=0.42, fixedsize=true];
+  P1  [shape=hexagon, label="เปิดรับข้อมูลที่พอร์ต 5005"];
+  P2  [shape=box, label="แปลงเป็นตัวเลข (กรัม)"];
+  P3  [shape=diamond, label="มีของบนจุดชั่ง?\n(เกิน 30 ก.)", width=2.7, height=1.3];
+  P4  [shape=box, label="เก็บ/อัปเดตค่าน้ำหนักสูงสุด"];
+  P5  [shape=diamond, label="ของยังอยู่?", width=2.0, height=1.0];
+  P7  [shape=diamond, label="หนักพอและอยู่นานพอ?", width=2.9, height=1.2];
+  P8  [shape=plaintext, margin=0, label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6"><TR><TD WIDTH="9"> </TD><TD>คำนวณน้ำหนักจริง</TD><TD WIDTH="9"> </TD></TR></TABLE>>];
+  P9  [shape=box, label="บวกยอดรวม + ค้างแสดง 3 วิ"];
+  P10 [shape=cds, label="แสดงบนจอ: ตัวนี้ + ยอดรวม"];
+  Z1  [shape=box, style="rounded,filled", label="สิ้นสุด"];
+  Z2  [shape=box, style="rounded,filled", label="สิ้นสุด"];
+
+  C -> P1 -> P2 -> P3;
+  P3 -> P2 [xlabel="ไม่ (รอ)"];
+  P3 -> P4 [xlabel="ใช่"];
+
+  P4 -> P5;
+  P5 -> P4 [xlabel="ใช่"];
+  P5 -> P7 [xlabel="ไม่"];
+
+  P7 -> Z1 [xlabel="ไม่"];
+  P7 -> P8 [xlabel="ใช่"];
+  { rank=same; P7; Z1; }
+
+  P8 -> P9 -> P10 -> Z2;
+}
